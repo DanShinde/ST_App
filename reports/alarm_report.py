@@ -117,19 +117,24 @@ def generate_alarm_pdf_report(df, params):
         def _draw_footer(self, canvas, doc):
             canvas.saveState()
             canvas.setFont('Helvetica', 8)
+            canvas.setFillColor(colors.black)
+            
             # Printed By
-            pb = params.get('Printed By', '[no user logged in]')
-            canvas.drawString(20*mm, 10*mm, f"Printed By: {pb}")
-            # Printed Date
-            pd_txt = datetime.now().strftime('%d/%m/%Y %H:%M')
-            pd_w = canvas.stringWidth(f"Printed Date: {pd_txt}", 'Helvetica', 8)
-            canvas.drawString(
-                (doc.pagesize[0] - pd_w)/2,
-                10*mm,
-                f"Printed Date: {pd_txt}"
-            )
-            # Verified By
-            canvas.drawString(170*mm, 10*mm, "Verified By:")
+            printedBy = params.get('Printed By', '[no user logged in]') 
+            canvas.drawString(10 * mm, 10 * mm, f"Printed By: {printedBy}")
+
+            # Printed Date (centered)
+            printed_date = datetime.now().strftime('%d/%m/%Y %H:%M')
+            date_text_width = canvas.stringWidth(printed_date, 'Helvetica', 8)
+            center_x = (doc.pagesize[0] / 2) - (date_text_width / 2) - 10 * mm
+            canvas.drawString(center_x, 10 * mm, f"Printed Date: {printed_date}")
+            
+            # Page Number (right side)
+            page_num = canvas.getPageNumber()
+            # canvas.drawRightString(150 * mm, 10 * mm, f"Page {page_num}")
+            
+            # Verified By line
+            canvas.drawString(170 * mm, 10 * mm, "Verified By: ")
             canvas.restoreState()
 
     story = []
@@ -184,8 +189,9 @@ def show(databases):
     end_dt = datetime.combine(ed, etime)
 
     if st.button("Generate Report"):
-        df = get_alarm_data(start_dt, end_dt, databases)
-        
+        # df = get_alarm_data(start_dt, end_dt, databases)
+        with st.spinner("Fetching data from database..."):
+            df = get_alarm_data(start_dt, end_dt, databases)
         if df.empty:
             st.warning("No alarms found for that period.")
         else:
@@ -195,7 +201,7 @@ def show(databases):
             params = {
                 "FROM DATE": start_dt.strftime('%d/%m/%Y %H:%M'),
                 "TO DATE": end_dt.strftime('%d/%m/%Y %H:%M'),
-                "Printed By": "Operator"  # Replace with dynamic user if available
+                "Printed By": get_latest_user(databases)
             }
 
             pdf = generate_alarm_pdf_report(df, params)
@@ -203,7 +209,7 @@ def show(databases):
             st.download_button(
                 label="📥 Print Report",
                 data=pdf,
-                file_name=f"alarm_report_{datetime.now():%Y%m%d_%H%M}.pdf",
+                file_name=f"Alarm_Report_{datetime.now():%Y%m%d_%H%M}.pdf",
                 mime="application/pdf"
             )
 

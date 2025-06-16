@@ -249,12 +249,12 @@ def generate_pdf_report(df, title="Process Data Report", params=None):
             
             # Printed By
             printedBy = params.get('Printed By', '[no user logged in]') 
-            canvas.drawString(20 * mm, 10 * mm, f"Printed By: {printedBy}")
+            canvas.drawString(10 * mm, 10 * mm, f"Printed By: {printedBy}")
 
             # Printed Date (centered)
             printed_date = datetime.now().strftime('%d/%m/%Y %H:%M')
             date_text_width = canvas.stringWidth(printed_date, 'Helvetica', 8)
-            center_x = (doc.pagesize[0] / 2) - (date_text_width / 2) - 20 * mm
+            center_x = (doc.pagesize[0] / 2) - (date_text_width / 2) - 10 * mm
             canvas.drawString(center_x, 10 * mm, f"Printed Date: {printed_date}")
             
             # Page Number (right side)
@@ -523,7 +523,7 @@ def show(databases):
             st.download_button(
                 label="📥 Print Report",
                 data=pdf_bytes,
-                file_name=f"process_report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                file_name=f"Process_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime='application/pdf'
             )
             # st.table(df.hide_index())

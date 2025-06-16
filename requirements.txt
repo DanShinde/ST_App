@@ -6,7 +6,7 @@ reportlab
 jinja2
 python-dotenv
 openpyxl
-pyinstaller
+# pyinstaller
 # docker tag reporting-service:latest danshinde/reporting-service:1.0.0
 # docker push danshinde/reporting-service:1.0.0
 # docker cp C:\path\to\new\db_config.json reporting-service:/app/db_config.json
