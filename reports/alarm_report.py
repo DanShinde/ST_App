@@ -46,7 +46,7 @@ def get_alarm_data(start_dt, end_dt, config):
     # split into Date / Time
     df['LocalTS'] = pd.to_datetime(df['LocalTS'])
     df['Date'] = df['LocalTS'].dt.strftime('%d-%m-%Y')
-    df['Time'] = df['LocalTS'].dt.strftime('%H:%M')
+    df['Time'] = df['LocalTS'].dt.strftime('%H:%M:%S')
     return df[['Date', 'Time', 'Alarm']]
 
 def generate_alarm_pdf_report(df, params):
@@ -156,62 +156,98 @@ def generate_alarm_pdf_report(df, params):
     buffer.close()
     return pdf
 
+
 def show(databases):
     st.subheader("📢 Alarm Report")
 
     c1, c2 = st.columns(2)
+    
     with c1:
-        sd = st.date_input("Start Date", value=datetime.now(),  format="DD/MM/YYYY")
-        # stime = st.time_input("Start Time", value=time(0,0))
+        sd = st.date_input("Start Date", value=datetime.now(), format="DD/MM/YYYY")
         start_time_str = st.text_input("Start Time", value="00:00")
         try:
             stime = time(*map(int, start_time_str.split(':')))
-        except:
+        except ValueError:
             st.error("Please enter time in HH:MM format")
             stime = time(0, 0)
+
     with c2:
         ed = st.date_input("End Date", value=datetime.now(), format="DD/MM/YYYY")
-        # etime = st.time_input("End Time", value=time(23,59))
         end_time_str = st.text_input("End Time", value="23:59")
         try:
             etime = time(*map(int, end_time_str.split(':')))
-        except:
+        except ValueError:
             st.error("Please enter time in HH:MM format")
             etime = time(23, 59)
 
     start_dt = datetime.combine(sd, stime)
-    end_dt   = datetime.combine(ed, etime)
+    end_dt = datetime.combine(ed, etime)
 
     if st.button("Generate Report"):
         df = get_alarm_data(start_dt, end_dt, databases)
+        
         if df.empty:
             st.warning("No alarms found for that period.")
-            st.session_state.df = None
         else:
-            st.session_state.df = df
+            
 
-    if 'df' in st.session_state and st.session_state.df is not None and not st.session_state.df.empty:
-        params = {
-            "FROM DATE": start_dt.strftime('%d/%m/%Y %H:%M'),
-            "TO DATE": end_dt.strftime('%d/%m/%Y %H:%M'),
-            "Printed By": get_latest_user(databases)
-        }
-        pdf = generate_alarm_pdf_report(st.session_state.df, params)
-        
-        st.download_button(
-            label="📥 Print Report",
-            data=pdf,
-            file_name=f"alarm_report_{datetime.now():%Y%m%d_%H%M}.pdf",
-            mime="application/pdf"
-        )
+            # Generate PDF and show download button
+            params = {
+                "FROM DATE": start_dt.strftime('%d/%m/%Y %H:%M'),
+                "TO DATE": end_dt.strftime('%d/%m/%Y %H:%M'),
+                "Printed By": "Operator"  # Replace with dynamic user if available
+            }
 
-    # Make only the table scrollable with fixed height
-    if 'df' in st.session_state and st.session_state.df is not None:
-        st.markdown(
-            f"""
-            <div style="height: 400px; overflow: auto; margin-top: 20px;">
-                {st.session_state.df.to_html(index=False)}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+            pdf = generate_alarm_pdf_report(df, params)
+
+            st.download_button(
+                label="📥 Print Report",
+                data=pdf,
+                file_name=f"alarm_report_{datetime.now():%Y%m%d_%H%M}.pdf",
+                mime="application/pdf"
+            )
+
+            # --- Style the DataFrame as HTML table ---
+            styled_html = df.to_html(index=False, classes='styled-table', escape=False)
+
+            # Custom CSS to style the table
+            st.markdown("""
+            <style>
+            .styled-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-family: Arial, sans-serif;
+                background-color: white;
+                margin-bottom: 20px;
+            }
+
+            .styled-table th, .styled-table td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                vertical-align: top;
+            }
+
+            .styled-table th {
+                background-color: #f2f2f2;
+                text-align: center;
+                font-weight: bold;
+            }
+
+            /* Fixed width and no wrap for Date & Time */
+            .styled-table td:nth-child(1), 
+            .styled-table td:nth-child(2) {
+                white-space: nowrap;
+                width: 120px;
+            }
+
+            /* Allow wrapping for Description and other long-text columns */
+            .styled-table td:nth-child(4) {
+                white-space: normal;
+                word-wrap: break-word;
+                max-width: 400px;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
+            # Display the styled HTML table
+            st.markdown(styled_html, unsafe_allow_html=True)

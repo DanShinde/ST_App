@@ -24,7 +24,7 @@ from reportlab.pdfgen.canvas import Canvas
 #     conn_str = get_connection_string()
 #     return pyodbc.connect(conn_str)
 
-@st.cache_data(ttl=3600)
+# @st.cache_data(ttl=3600)
 def get_latest_user(config):
     try:
         conn = get_db_connection(config,'Audit')
@@ -54,7 +54,7 @@ def get_latest_user(config):
         
 
 
-@st.cache_resource
+# @st.cache_resource
 def get_db_connection(config, db_name='Process'):
     db_config = config.get(db_name, {})
     
@@ -80,7 +80,7 @@ def get_db_connection(config, db_name='Process'):
     return pyodbc.connect(conn_str)
 
 
-@st.cache_data(ttl=3600)
+# @st.cache_data(ttl=3600)
 def get_tag_options(config):
     conn = get_db_connection(config=config, db_name='Process')
     cursor = conn.cursor()
@@ -100,7 +100,7 @@ def get_tag_options(config):
     return pd.DataFrame.from_records(data, columns=columns)
 
 
-@st.cache_data
+# @st.cache_data
 def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, config=None):
     conn = get_db_connection(config=config)
     cursor = conn.cursor()
@@ -371,6 +371,68 @@ class NumberedCanvas(Canvas):
         # all pages done, write out the file
         super().save()
 
+def show_styled_table(df):
+    print(df.head())
+        # Remove 'DisplayName' column
+    df_no_index = df.drop(columns=['DisplayName'], errors='ignore')
+    
+    # Reset index to avoid showing internal IDs
+    df_no_index = df_no_index.reset_index(drop=True)
+    
+    # Reorder columns if necessary
+    cols = ['Date', 'Time'] + [col for col in df_no_index.columns if col not in ['Date', 'Time']]
+    df_no_index = df_no_index[cols]
+    
+    # Convert DataFrame to HTML
+    styled_html = df_no_index.to_html(index=False, classes='styled-table', escape=False)
+    
+    # Define CSS styling
+    st.markdown("""
+    <style>
+    .styled-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: Arial, sans-serif;
+        margin-bottom: 20px;
+    }
+
+    .styled-table th, .styled-table td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        vertical-align: top;
+        text-align: left;
+    }
+
+    .styled-table th {
+        background-color: #f2f2f2;
+        text-align: center;
+        font-weight: bold;
+    }
+
+    /* Fixed width and no wrap for Date & Time */
+    .styled-table td:nth-child(1), 
+    .styled-table td:nth-child(2) {
+        white-space: nowrap;
+        width: 120px;
+    }
+                
+    /* Hide the first column (DisplayName) */
+    .styled-table td:nth-child(1), 
+    .styled-table th:nth-child(1) {
+        display: none;
+    }
+                
+    /* Allow wrapping for long-text columns (e.g., MessageText or Value) */
+    .styled-table td:nth-child(n+3) {
+        white-space: normal;
+        word-wrap: break-word;
+        max-width: 400px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Display the styled table
+    st.markdown(styled_html, unsafe_allow_html=True)
 
 def show(databases):
     st.subheader("📅 Process Report")
@@ -428,7 +490,7 @@ def show(databases):
         #         df.drop(columns=['BatchID', 'UserID'], inplace=True)
         if not df.empty:
             # Apply sampling interval
-            if interval > 1:
+            if interval >= 1:
                 # Convert DateAndTime to datetime
                 df['DateAndTime'] = pd.to_datetime(df['DateAndTime'], format='%d-%m-%Y %H:%M')
 
@@ -464,18 +526,12 @@ def show(databases):
                 file_name=f"process_report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime='application/pdf'
             )
-            st.table(df)
-
-                # Make only the table scrollable with fixed height
-            if 'df' in st.session_state and st.session_state.df is not None:
-                st.markdown(
-                    f"""
-                    <div style="height: 400px; overflow: auto; margin-top: 20px;">
-                        {st.session_state.df.to_html(index=False)}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+            # st.table(df.hide_index())
+            # st.table(df, hide_index=True, use_container_width=True)
+            df_no_index = df.reset_index(drop=True, inplace=False)
+            
+            # st.table(df_no_index)
+            show_styled_table(df)
         else:
             st.warning("No data found for the selected parameters")
     elif batch_id == "":

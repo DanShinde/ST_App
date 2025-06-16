@@ -12,18 +12,24 @@ from reportlab.platypus import (
     Table, TableStyle, PageBreak, Image
 )
 
+from io import BytesIO
+from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 # reuse your connection, user-lookup, and canvas-numbering from process_report
 from .process_report import get_db_connection, get_latest_user, NumberedCanvas
 
-def get_audit_data(start_dt, end_dt, interval, config):
+def get_audit_data(start_dt, end_dt, config):
     """
     Fetch AuditReport entries between start_dt and end_dt,
     convert timestamp to IST, filter out system/service accounts,
     and apply row number-based interval filtering.
     """
     conn = get_db_connection(config, db_name="Audit")
-    if conn.closed:
-        conn.connect()
+
     cursor = conn.cursor()
 
     # SQL Query with ROW_NUMBER() and interval filtering
@@ -56,13 +62,13 @@ def get_audit_data(start_dt, end_dt, interval, config):
                 'NT AUTHORITY\\SYSTEM'
             )
     ) MT
-    WHERE 
-        MT.rownum % ? = (CASE WHEN ? > 1 THEN 1 ELSE MT.rownum % ? END)
+
     ORDER BY TimeStmp
     """
-
+    # WHERE 
+    #     MT.rownum % ? = (CASE WHEN ? > 1 THEN 1 ELSE MT.rownum % ? END)
     # Parameters: start_dt, end_dt, interval, interval, interval
-    params = [start_dt, end_dt, interval, interval, interval]
+    params = [start_dt, end_dt]
 
     try:
         cursor.execute(query, params)
@@ -74,7 +80,7 @@ def get_audit_data(start_dt, end_dt, interval, config):
             # Convert LocalTS to datetime and split into Date/Time
             df['LocalTS'] = pd.to_datetime(df['LocalTS'])
             df['Date'] = df['LocalTS'].dt.strftime('%d-%m-%Y')
-            df['Time'] = df['LocalTS'].dt.strftime('%H:%M')
+            df['Time'] = df['LocalTS'].dt.strftime('%H:%M:%S')
 
             # Drop unnecessary columns
             df.drop(columns=['LocalTS', 'rownum'], inplace=True)
@@ -84,21 +90,20 @@ def get_audit_data(start_dt, end_dt, interval, config):
             return df
 
     finally:
+        cursor.close()
         pass
     #     conn.close()
 
+
+
+
+# Assume these are defined somewhere
+# from your_project.utils import NumberedCanvas
+
 def generate_audit_pdf_report(df, params):
-    """
-    Build a PDF with:
-      • Logo + company name
-      • “Audit Report” title
-      • FROM / TO date params
-      • A four-column table
-      • Footer with Printed By, Printed Date, Page X of Y, Verified By
-    """
     buffer = BytesIO()
 
-    # margins
+    # Margins and page setup
     PAGE_SIZE = A4
     LEFT, RIGHT = 10*mm, 10*mm
     TOP, BOTTOM = 50*mm, 20*mm
@@ -121,14 +126,12 @@ def generate_audit_pdf_report(df, params):
 
         def _draw_header(self, canvas, doc):
             canvas.saveState()
-            # — logo —
             try:
                 logo = Image('alivus_logo.png', width=60, height=60)
                 logo.drawOn(canvas, 15*mm, doc.pagesize[1] - 25*mm)
             except:
                 pass
 
-            # — company name —
             canvas.setFont('Helvetica-Bold', 16)
             canvas.drawCentredString(
                 doc.pagesize[0]/2,
@@ -136,7 +139,6 @@ def generate_audit_pdf_report(df, params):
                 "ALIVUS LIFE SCIENCES LIMITED ANKLESHWAR"
             )
 
-            # — report title —
             canvas.setFont('Helvetica-Bold', 14)
             canvas.drawCentredString(
                 doc.pagesize[0]/2,
@@ -144,18 +146,11 @@ def generate_audit_pdf_report(df, params):
                 "Audit Report"
             )
 
-            # — date params —
             if params:
                 canvas.setFont('Helvetica', 9)
-                y0 = doc.pagesize[1] -  40*mm
-                canvas.drawString(
-                    120*mm, y0,
-                    f"FROM DATE: {params.get('FROM DATE','')}"
-                )
-                canvas.drawString(
-                    120*mm, y0 - 5*mm,
-                    f"TO DATE:   {params.get('TO DATE','')}"
-                )
+                y0 = doc.pagesize[1] - 40*mm
+                canvas.drawString(120*mm, y0, f"FROM DATE: {params.get('FROM DATE','')}")
+                canvas.drawString(120*mm, y0 - 5*mm, f"TO DATE:   {params.get('TO DATE','')}")
 
             canvas.restoreState()
 
@@ -163,29 +158,60 @@ def generate_audit_pdf_report(df, params):
             canvas.saveState()
             canvas.setFont('Helvetica', 8)
 
-            # Printed By
             pb = params.get('Printed By', '[no user logged in]')
             canvas.drawString(20*mm, 10*mm, f"Printed By: {pb}")
 
-            # Printed Date (center)
             pd_txt = datetime.now().strftime('%d/%m/%Y %H:%M')
             pd_w = canvas.stringWidth(f"Printed Date: {pd_txt}", 'Helvetica', 8)
-            canvas.drawString(
-                (doc.pagesize[0] - pd_w)/2,
-                10*mm,
-                f"Printed Date: {pd_txt}"
-            )
+            canvas.drawString((doc.pagesize[0] - pd_w)/2, 10*mm, f"Printed Date: {pd_txt}")
 
-            # Verified By
             canvas.drawString(170*mm, 10*mm, "Verified By:")
 
             canvas.restoreState()
 
-    # assemble the story
+    # Prepare story
     story = []
+
     if not df.empty:
-        data = [df.columns.tolist()] + df.values.tolist()
-        tbl = Table(data, repeatRows=1, colWidths=[30*mm, 20*mm, 100*mm, 30*mm])
+        styles = getSampleStyleSheet()
+        style_normal = styles['Normal']
+        style_normal.fontSize = 7
+        style_normal.leading = 8
+
+        # Convert DataFrame to list of lists with Paragraphs for wrapping
+        data = [df.columns.tolist()]
+        col_count = len(df.columns)
+
+        # Define which column should expand (e.g., index 2 = third column)
+        EXPAND_COL_INDEX = 2  # Change this as needed (e.g., Description/UserID)
+
+        # Estimate max width per column
+        col_widths = []
+        max_col_widths = [120*mm] * col_count  # Max possible width for each column
+
+        for idx, col in enumerate(df.columns):
+            max_text_width = max(
+                canvas.Canvas('').stringWidth(str(val), 'Helvetica', 7)
+                for val in df[col].astype(str).tolist()
+            )
+            col_widths.append(max(max_text_width + 10, 20*mm))
+
+        # Adjust expanding column to take up remaining space
+        fixed_width_sum = sum(col_widths[:EXPAND_COL_INDEX] + col_widths[EXPAND_COL_INDEX+1:])
+        expand_col_width = max(30*mm, PAGE_SIZE[0] - LEFT - RIGHT - fixed_width_sum)
+        col_widths[EXPAND_COL_INDEX] = expand_col_width
+
+        # Wrap text in each cell using Paragraph
+        for _, row in df.iterrows():
+            wrapped_row = []
+            for i, val in enumerate(row):
+                if i == EXPAND_COL_INDEX:
+                    wrapped_row.append(Paragraph(str(val), style_normal))
+                else:
+                    wrapped_row.append(str(val))
+            data.append(wrapped_row)
+
+        tbl = Table(data, repeatRows=1, colWidths=col_widths)
         tbl.setStyle(TableStyle([
             ('ALIGN', (0,0),(1,-1), 'CENTER'),
             ('ALIGN', (2,0),(2,-1), 'LEFT'),
@@ -195,6 +221,7 @@ def generate_audit_pdf_report(df, params):
             ('BACKGROUND', (0,0),(-1,0), colors.whitesmoke),
             ('TEXTCOLOR', (0,0),(-1,-1), colors.black),
             ('GRID', (0,0),(-1,-1), 0.5, colors.grey),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ]))
         story.append(tbl)
 
@@ -206,6 +233,7 @@ def generate_audit_pdf_report(df, params):
     pdf = buffer.getvalue()
     buffer.close()
     return pdf
+
 
 def show(databases):
     st.subheader("📘 Audit Report")
@@ -233,16 +261,15 @@ def show(databases):
 
     start_dt = datetime.combine(sd, stime)
     end_dt   = datetime.combine(ed, etime)
-    interval = st.number_input("Time Interval (minutes)", min_value=1, value=10)
+    # interval = st.number_input("Time Interval (minutes)", min_value=1, value=10)
     
     if st.button("Generate Report"):
-        df = get_audit_data(start_dt, end_dt, interval, databases)
+        df = get_audit_data(start_dt, end_dt, databases)
         if df.empty:
             st.warning("No audit records found for that period.")
             return
 
         # st.dataframe(df, use_container_width=True)
-        st.table(df)
         params = {
             "FROM DATE": start_dt.strftime('%d/%m/%Y %H:%M'),
             "TO DATE":   end_dt.strftime('%d/%m/%Y %H:%M'),
@@ -256,3 +283,51 @@ def show(databases):
             file_name=f"audit_report_{datetime.now():%Y%m%d_%H%M}.pdf",
             mime="application/pdf"
         )
+        if df.empty:
+            st.warning("No audit records found for that period.")
+            return
+
+        # --- Style the DataFrame as HTML table with fixed column widths ---
+        styled_html = df.to_html(index=False, classes='styled-table', escape=False)
+
+        # Custom CSS to style the table
+        st.markdown("""
+        <style>
+        .styled-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: Arial, sans-serif;
+            background-color: white;
+            margin-bottom: 20px;
+        }
+
+        .styled-table th, .styled-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            vertical-align: top;
+        }
+
+        .styled-table th {
+            background-color: #f2f2f2;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .styled-table td:nth-child(1), 
+        .styled-table td:nth-child(2) {
+            white-space: nowrap;
+            width: 120px; /* Date */
+        }
+
+        .styled-table td:nth-child(3), 
+        .styled-table td:nth-child(4) {
+            white-space: normal;
+            word-wrap: break-word;
+            max-width: 400px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Display the styled HTML table
+        st.markdown(styled_html, unsafe_allow_html=True)
+
