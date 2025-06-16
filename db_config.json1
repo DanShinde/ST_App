@@ -1,0 +1,25 @@
+{
+  "databases": {
+    "Alarms": {
+      "server": "127.0.0.1",
+      "instance": "SQLEXPRESS02",
+      "port": 1433,
+      "database": "FTAlarms",
+      "authentication": "windows"
+    },
+    "Audit": {
+      "server": "127.0.0.1",
+      "instance": "SQLEXPRESS02",
+      "port": 1433,
+      "database": "AuditReport",
+      "authentication": "windows"
+    },
+    "Process": {
+      "server": "127.0.0.1",
+      "instance": "SQLEXPRESS02",
+      "port": 1433,
+      "database": "ParReport",
+      "authentication": "windows"
+    }
+  }
+}

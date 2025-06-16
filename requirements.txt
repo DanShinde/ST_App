@@ -1,0 +1,27 @@
+streamlit
+fpdf2
+pandas
+pymssql
+weasyprint
+reportlab
+jinja2
+python-dotenv
+openpyxl
+pyinstaller
+# docker tag reporting-service:latest danshinde/reporting-service:1.0.0
+# docker push danshinde/reporting-service:1.0.0
+# docker cp C:\path\to\new\db_config.json reporting-service:/app/db_config.json
+
+# docker pull danshinde/reporting-service:1.0.1
+# docker rm -f reporting-service
+# docker run -d --name reporting-service --restart=always -p 8501:8501 \
+#     -v C:\config\db_config.json:/app/db_config.json \
+#     -v C:\config\alivus_logo.png:/app/alivus_logo.png \
+#     danshinde/reporting-service:1.0.1
+
+
+# Done - Time to be changed in minutes editable
+# Done - Remove options from preview table
+# Done - date select to DD/MM/YYYY
+# Done - separate column for Date time
+# Done - Time Interval(Min.) in Audit report

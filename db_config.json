@@ -1,0 +1,32 @@
+{
+    "databases": {
+        "Alarms": {
+            "driver": "ODBC Driver 17 for SQL Server",
+            "server": "ARM-30196\\SQLEXPRESS02",
+            "port" : 1433,
+            "database": "FTAlarms",
+            "authentication": "windows",
+            "username": "",
+            "password": ""
+        },
+        "Audit": {
+            "driver": "ODBC Driver 17 for SQL Server",
+            "server": "ARM-30196\\SQLEXPRESS02",
+            "port" : 1433,
+            "database": "AuditReport",
+            "authentication": "windows",
+            "username": "",
+            "password": ""
+        },
+        "Process": {
+            "driver": "ODBC Driver 17 for SQL Server",
+            "server": "ARM-30196\\SQLEXPRESS02",
+            "port" : 1433,
+            "database": "ParReport",
+            "trusted_connection": "yes",
+            "authentication": "windows",
+            "username": "",
+            "password": ""
+        }
+    }
+}

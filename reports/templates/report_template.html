@@ -1,0 +1,94 @@
+<!-- reports/templates/report_template.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Process Parameter Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 10px;
+        }
+        .logo {
+            width: 60px;
+        }
+        .company-name {
+            text-align: center;
+            font-size: 18pt;
+            font-weight: bold;
+        }
+        .params {
+            margin-top: -50px;
+            text-align: right;
+            font-size: 10pt;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 4px;
+            text-align: center;
+            font-size: 9pt;
+        }
+        th {
+            background-color: #f0f0f0;
+        }
+        footer {
+            position: fixed;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            font-size: 8pt;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <img src="{{ logo }}" class="logo" />
+    <div class="company-name">ALIVUS LIFE SCIENCES LIMITED ANKLESHWAR</div>
+</div>
+
+<div class="params">
+    <p><strong>FROM DATE:</strong> {{ params['FROM DATE'] }}</p>
+    <p><strong>TO DATE:</strong> {{ params['TO DATE'] }}</p>
+    <p><strong>BATCH ID:</strong> {{ params['BATCH ID'] }}</p>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            {% for col in columns %}
+                <th>{{ col }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in data %}
+            <tr>
+            {% for val in row %}
+                <td>{{ val }}</td>
+            {% endfor %}
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<footer>
+    Printed BY: [no user logged in] | Printed Date: {{ printed_date }} | Page {{ page_number }}
+</footer>
+
+</body>
+</html>
