@@ -22,6 +22,8 @@ def get_audit_data(start_dt, end_dt, interval, config):
     and apply row number-based interval filtering.
     """
     conn = get_db_connection(config, db_name="Audit")
+    if conn.closed:
+        conn.connect()
     cursor = conn.cursor()
 
     # SQL Query with ROW_NUMBER() and interval filtering

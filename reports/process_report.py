@@ -448,7 +448,6 @@ def show(databases):
 
             st.success("Report data loaded successfully")
             # st.dataframe(df, use_container_width=True)
-            st.table(df)
             report_params = {
                 "FROM DATE": start_datetime.strftime('%d/%m/%Y %H:%M'),
                 "TO DATE": end_datetime.strftime('%d/%m/%Y %H:%M'),
@@ -465,9 +464,23 @@ def show(databases):
                 file_name=f"process_report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime='application/pdf'
             )
+            st.table(df)
+
+                # Make only the table scrollable with fixed height
+            if 'df' in st.session_state and st.session_state.df is not None:
+                st.markdown(
+                    f"""
+                    <div style="height: 400px; overflow: auto; margin-top: 20px;">
+                        {st.session_state.df.to_html(index=False)}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
         else:
             st.warning("No data found for the selected parameters")
     elif batch_id == "":
         st.warning("Please enter a Batch ID")
     elif generate_btn:
         st.warning("Please select at least one tag")
+
+    
