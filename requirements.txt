@@ -1,8 +1,7 @@
 streamlit
 fpdf2
 pandas
-pymssql
-weasyprint
+pyodbc
 reportlab
 jinja2
 python-dotenv

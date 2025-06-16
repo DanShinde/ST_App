@@ -82,7 +82,8 @@ def get_audit_data(start_dt, end_dt, interval, config):
             return df
 
     finally:
-        conn.close()
+        pass
+    #     conn.close()
 
 def generate_audit_pdf_report(df, params):
     """

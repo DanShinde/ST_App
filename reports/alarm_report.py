@@ -15,7 +15,7 @@ from reportlab.platypus import (
 # reuse your connection and canvas-numbering from process_report
 from .process_report import get_db_connection, get_latest_user, NumberedCanvas
 
-@st.cache_data(ttl=3600)
+# @st.cache_data(ttl=3600)
 def get_alarm_data(start_dt, end_dt, config):
     """
     Fetch alarms between start_dt and end_dt.
@@ -37,7 +37,7 @@ def get_alarm_data(start_dt, end_dt, config):
     rows = cursor.fetchall()
     cols = [col[0] for col in cursor.description]
     cursor.close()
-    conn.close()
+    # conn.close()
 
     df = pd.DataFrame.from_records(rows, columns=cols)
     if df.empty:
