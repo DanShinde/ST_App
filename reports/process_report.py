@@ -15,6 +15,7 @@ from reportlab.platypus.flowables import HRFlowable
 from itertools import islice
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen.canvas import Canvas
+from reportlab.lib.enums import TA_CENTER
 
 
 
@@ -163,21 +164,20 @@ def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, 
 
 def generate_pdf_report(df, title="Process Data Report", params=None):
     buffer = BytesIO()
-    
+
     # Define page size and margins
     PAGE_SIZE = A4
     LEFT_MARGIN = 10*mm
     RIGHT_MARGIN = 10*mm
     TOP_MARGIN = 50*mm  # Extra space for header
     BOTTOM_MARGIN = 20*mm
-    
-    # Create a custom document template
+
     class MyDocTemplate(BaseDocTemplate):
         def __init__(self, filename, **kwargs):
             BaseDocTemplate.__init__(self, filename, **kwargs)
             # Calculate available height for content
             content_height = self.pagesize[1] - TOP_MARGIN - BOTTOM_MARGIN
-            
+
             # Create a frame that leaves space for header and footer
             frame = Frame(
                 LEFT_MARGIN, BOTTOM_MARGIN,
@@ -186,7 +186,7 @@ def generate_pdf_report(df, title="Process Data Report", params=None):
                 bottomPadding=0, topPadding=0,
                 id='normal'
             )
-            
+
             # Create page template with header and footer functions
             template = PageTemplate(
                 id='AllPages',
@@ -194,14 +194,14 @@ def generate_pdf_report(df, title="Process Data Report", params=None):
                 onPage=self.header_footer
             )
             self.addPageTemplates([template])
-        
+
         def header_footer(self, canvas, doc):
             self.header(canvas, doc)
             self.footer(canvas, doc)
-        
+
         def header(self, canvas, doc):
             canvas.saveState()
-            
+
             # First Row: Logo + Company Name
             # Logo on left
             try:
@@ -209,44 +209,49 @@ def generate_pdf_report(df, title="Process Data Report", params=None):
                 logo.drawOn(canvas, 15*mm, doc.pagesize[1] - 25*mm)
             except:
                 pass
-            
+
             # Company name centered
             canvas.setFont('Helvetica-Bold', 16)
             company_name = "ALIVUS LIFE SCIENCES LIMITED ANKLESHWAR"
             canvas.drawCentredString(doc.pagesize[0]/2, doc.pagesize[1] - 20*mm, company_name)
-            
+            #Report title centered
+            canvas.drawCentredString(
+                doc.pagesize[0]/2,
+                doc.pagesize[1] - 32*mm,
+                "Process Parameter Report"
+            )
             # Second Row: Parameters
             if params:
                 canvas.setFont('Helvetica', 9)
                 y_pos = doc.pagesize[1] - 40*mm
-                
+
                 # Draw parameters
                 param_items = [
                     ("FROM DATE:", params.get('FROM DATE', '')),
                     ("TO DATE:", params.get('TO DATE', '')),
                     ("BATCH ID:", params.get('BATCH ID', 'Not specified'))
                 ]
-                
+
                 col_width = 50*mm
                 right_col_x = doc.pagesize[0] - 20*mm - col_width
-                
+
                 for i, (label, value) in enumerate(param_items):
                     # if i < 2:  # First two items on left
                     #     x = 20*mm
                     #     y = y_pos - i*5*mm
                     # else:  # Last item on right
-                    x = right_col_x
-                    y = y_pos - (i-2)*5*mm
-                    
+                    x = right_col_x + 10*mm
+                    y = y_pos - (i-2)*5*mm 
+
                     canvas.drawString(x, y, f"{label} {value}")
-            
+
             canvas.restoreState()
-        
+
         def footer(self, canvas, doc):
             canvas.saveState()
             canvas.setFont('Helvetica', 8)
             canvas.setFillColor(colors.black)
-            
+
             # Printed By
             printedBy = params.get('Printed By', '[no user logged in]') 
             canvas.drawString(10 * mm, 10 * mm, f"Printed By: {printedBy}")
@@ -256,15 +261,15 @@ def generate_pdf_report(df, title="Process Data Report", params=None):
             date_text_width = canvas.stringWidth(printed_date, 'Helvetica', 8)
             center_x = (doc.pagesize[0] / 2) - (date_text_width / 2) - 10 * mm
             canvas.drawString(center_x, 10 * mm, f"Printed Date: {printed_date}")
-            
+
             # Page Number (right side)
             page_num = canvas.getPageNumber()
             # canvas.drawRightString(150 * mm, 10 * mm, f"Page {page_num}")
-            
+
             # Verified By line
             canvas.drawString(170 * mm, 10 * mm, "Verified By: ")
             canvas.restoreState()
-    
+
     # Create the document
     doc = MyDocTemplate(
         buffer,
@@ -274,58 +279,88 @@ def generate_pdf_report(df, title="Process Data Report", params=None):
         topMargin=TOP_MARGIN,
         bottomMargin=BOTTOM_MARGIN
     )
-    
+
     # Prepare the story (content)
     story = []
-    
+
     if not df.empty:
         # Remove BatchID and UserID from DataFrame
-        fixed_columns = ['Date','Time']
+        fixed_columns = ['Date', 'Time']
         df = df[[col for col in df.columns if col in fixed_columns or col not in ['BatchID', 'UserID']]]
-        
+
         # Round numeric values
         numeric_cols = df.select_dtypes(include=['number']).columns
         df[numeric_cols] = df[numeric_cols].round(2)
-        
+
         # Build Table in chunks
         def chunk_list(lst, size):
             """Helper: Yield successive chunks of list"""
             it = iter(lst)
             return iter(lambda: list(islice(it, size)), [])
-        
+
         data_cols = [col for col in df.columns if col not in fixed_columns]
-        max_data_cols_per_page = 10  # Reduced to fit with header
+        max_data_cols_per_page = 8  # Reduced to fit with header
         col_chunks = list(chunk_list(data_cols, max_data_cols_per_page))
-        
+
         for i, cols in enumerate(col_chunks):
             cols_with_fixed = fixed_columns + cols
             sub_df = df[cols_with_fixed]
-            
-            # Prepare table data
-            data = [sub_df.columns.tolist()] + sub_df.astype(str).values.tolist()
-            
+
+            # Prepare table data with units below column names
+            styles = getSampleStyleSheet()
+            styles["Normal"].alignment = TA_CENTER
+            # Create a custom style for centered headers
+            centered_header_style = ParagraphStyle(
+                name='CenteredHeader',
+                parent=styles['Normal'],
+                alignment=TA_CENTER,  # Horizontal centering
+                spaceBefore=0,        # Remove extra space before the paragraph
+                spaceAfter=0          # Remove extra space after the paragraph
+            )
+            header = []
+            for col in sub_df.columns:
+                if 'TT' in col:  # Example logic to identify temperature columns
+                # Combine column name and unit in a single cell °C
+                    header.append(Paragraph(f"{col}<br/>{'(Deg.C)'}", style=styles["Normal"]))
+                elif 'PT' in col:  # Example logic to identify pressure columns
+                    header.append(Paragraph(f"{col}<br/>(Bar)", style=styles["Normal"]))
+                elif 'TMF' in col:  # Example logic to identify flow columns
+                    header.append(Paragraph(f"{col}<br/>(Kg/Hr)", style=styles["Normal"]))
+                elif 'MTR' in col:  # Example logic to identify pressure columns
+                    header.append(Paragraph(f"{col}<br/>(LPH)", style=styles["Normal"]))
+                elif 'OZ' in col:  # Example logic to identify pressure columns
+                    header.append(Paragraph(f"{col}<br/>(PPMV)", style=styles["Normal"]))
+                elif 'RLT' in col:  # Example logic to identify pressure columns
+                    header.append(Paragraph(f"{col}<br/>(%)", style=styles["Normal"]))
+                else:
+                    header.append(Paragraph(col, style=centered_header_style))
+
+            # Add data rows
+            data = [header] + sub_df.astype(str).values.tolist()
+
             # Build table
-            table = Table(data, repeatRows=1)
+            table = Table(data, repeatRows=1)  # Repeat the header row
             style = TableStyle([
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTSIZE', (0, 0), (-1, 0), 9),
-                ('FONTSIZE', (0, 1), (-1, -1), 7),
-                ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
-                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('BOX', (0, 0), (-1, -1), 1, colors.black),
-                ('LINEBELOW', (0, 0), (-1, 0), 1, colors.black),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),  # Center all content
+                ('FONTSIZE', (0, 0), (-1, 0), 9),       # Larger font size for column names
+                ('FONTSIZE', (0, 1), (-1, -1), 8),      # Normal font size for data rows
+                ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),  # Center header row vertically
+                ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),  # Background for header row
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),  # Text color
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),     # Grid lines
+                ('BOX', (0, 0), (-1, -1), 1, colors.black),      # Outer border
+                ('LINEBELOW', (0, 0), (-1, 0), 1, colors.black),  # Separator line after header
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),   # Background for data rows
             ])
-            
+
             table.setStyle(style)
             story.append(table)
-            
+
+
             if i < len(col_chunks) - 1:
                 story.append(PageBreak())
-    
+
     # Build the document
-    # doc.build(story)
     doc.build(story, canvasmaker=NumberedCanvas)
 
     pdf_bytes = buffer.getvalue()
@@ -400,7 +435,7 @@ def show_styled_table(df):
         border: 1px solid #ddd;
         padding: 8px;
         vertical-align: top;
-        text-align: left;
+        text-align: center;
     }
 
     .styled-table th {
@@ -538,5 +573,3 @@ def show(databases):
         st.warning("Please enter a Batch ID")
     elif generate_btn:
         st.warning("Please select at least one tag")
-
-    
