@@ -332,6 +332,10 @@ def generate_pdf_report(df, title="Process Data Report", params=None):
                     header.append(Paragraph(f"{col}<br/>(PPMV)", style=styles["Normal"]))
                 elif 'RLT' in col:  # Example logic to identify pressure columns
                     header.append(Paragraph(f"{col}<br/>(%)", style=styles["Normal"]))
+                elif 'MFM' in col:  # Example logic to identify pressure columns
+                    header.append(Paragraph(f"{col}<br/>(LPH)", style=styles["Normal"]))
+                elif 'PH' in col:  # Example logic to identify pressure columns
+                    header.append(Paragraph(f"{col}<br/>(pH)", style=styles["Normal"]))
                 else:
                     header.append(Paragraph(col, style=centered_header_style))
 

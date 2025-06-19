@@ -1,7 +1,7 @@
 # reports/alarm_report.py
 import streamlit as st
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from io import BytesIO
 
 from reportlab.lib.pagesizes import A4
@@ -16,38 +16,41 @@ from reportlab.platypus import (
 from .process_report import get_db_connection, get_latest_user, NumberedCanvas
 
 # @st.cache_data(ttl=3600)
-def get_alarm_data(start_dt, end_dt, config):
+def get_alarm_data(start_dt_utc, end_dt_utc, config):
     """
-    Fetch alarms between start_dt and end_dt.
-    Returns a DataFrame with columns [Date, Time, Alarm].
+    Fetch alarms between UTC start_dt and end_dt.
+    Returns a DataFrame with columns [Date, Time, Alarm, UTC_Time, IST_Time].
     """
     conn = get_db_connection(config, db_name="Alarms")
-    cursor = conn.cursor()
+    
     query = """
     SELECT
-      DATEADD(SS, 19800, EventTimeStamp) AS LocalTS,
+      EventTimeStamp AS UTC_Time,
       MessageText AS Alarm
     FROM View_1
     WHERE EventTimeStamp BETWEEN ? AND ?
       AND MessageText <> 'Alarm fault: Alarm input quality is bad'
       AND MessageText <> 'Alarm fault cleared: Alarm input quality is good'
-    ORDER BY DATEADD(SS, 19800, EventTimeStamp)
+    ORDER BY EventTimeStamp
     """
-    cursor.execute(query, [start_dt, end_dt])
-    rows = cursor.fetchall()
-    cols = [col[0] for col in cursor.description]
-    cursor.close()
-    # conn.close()
+    
+    df = pd.read_sql_query(query, conn, params=[start_dt_utc, end_dt_utc])
 
-    df = pd.DataFrame.from_records(rows, columns=cols)
     if df.empty:
         return df
 
-    # split into Date / Time
-    df['LocalTS'] = pd.to_datetime(df['LocalTS'])
-    df['Date'] = df['LocalTS'].dt.strftime('%d-%m-%Y')
-    df['Time'] = df['LocalTS'].dt.strftime('%H:%M:%S')
-    return df[['Date', 'Time', 'Alarm']]
+    # Convert to proper datetime types
+    df['UTC_Time'] = pd.to_datetime(df['UTC_Time'])
+    
+    # Convert UTC to IST (+5:30)
+    df['IST_Time'] = df['UTC_Time'] + timedelta(hours=5, minutes=30)
+    
+    # Format for display
+    df['Date'] = df['IST_Time'].dt.strftime('%d-%m-%Y')
+    df['Time'] = df['IST_Time'].dt.strftime('%H:%M:%S')
+
+    return df[['Date', 'Time', 'Alarm', 'UTC_Time', 'IST_Time']]
+
 
 def generate_alarm_pdf_report(df, params):
     """
@@ -187,11 +190,12 @@ def show(databases):
 
     start_dt = datetime.combine(sd, stime)
     end_dt = datetime.combine(ed, etime)
-
+    start_dt_utc = start_dt - timedelta(hours=5, minutes=30)
+    end_dt_utc = end_dt - timedelta(hours=5, minutes=30)
     if st.button("Generate Report"):
         # df = get_alarm_data(start_dt, end_dt, databases)
         with st.spinner("Fetching data from database..."):
-            df = get_alarm_data(start_dt, end_dt, databases)
+            df = get_alarm_data(start_dt_utc, end_dt_utc, databases)
         if df.empty:
             st.warning("No alarms found for that period.")
         else:

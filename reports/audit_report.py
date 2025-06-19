@@ -1,7 +1,7 @@
 # reports/audit_report.py
 import streamlit as st
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from io import BytesIO
 
 from reportlab.lib.pagesizes import A4
@@ -22,78 +22,114 @@ from reportlab.pdfgen import canvas
 # reuse your connection, user-lookup, and canvas-numbering from process_report
 from .process_report import get_db_connection, get_latest_user, NumberedCanvas
 
+
 def get_audit_data(start_dt, end_dt, config):
     """
     Fetch AuditReport entries between start_dt and end_dt,
-    convert timestamp to IST, filter out system/service accounts,
-    and apply row number-based interval filtering.
+    convert timestamp to IST, filter out system/service accounts.
     """
     conn = get_db_connection(config, db_name="Audit")
 
-    cursor = conn.cursor()
-
-    # SQL Query with ROW_NUMBER() and interval filtering
     query = """
-    SELECT 
-        DATEADD(SECOND, 19800, TimeStmp) AS LocalTS,
+    WITH AuditCTE AS (
+      SELECT
+        TimeStmp AS UTC_Time,
         MessageText,
         UserID,
         UserFullName,
-        Audience,
-        MT.rownum
-    FROM (
-        SELECT 
-            DATEADD(SECOND, 19800, TimeStmp) AS TimeStmp,
-            MessageText,
-            UserID,
-            UserFullName,
-            Audience,
-            ROW_NUMBER() OVER (ORDER BY TimeStmp) AS rownum
-        FROM AuditReport
-        WHERE 
-            TimeStmp BETWEEN ? AND ?
-            AND UserID NOT IN (
-                'NT AUTHORITY\\NETWORK SERVICE',
-                'N/A',
-                'WORKGROUP\\WIN-U1DFOUPBRPI$',
-                'WIN-U1DFOUPBRPI\\ADMIN',
-                'FactoryTalk Service',
-                'NT AUTHORITY\\LOCAL SERVICE',
-                'NT AUTHORITY\\SYSTEM'
-            )
-    ) MT
-
-    ORDER BY TimeStmp
+        Audience
+      FROM AuditReport
+      WHERE TimeStmp BETWEEN ? AND ?
+        AND UserID NOT IN (
+          'NT AUTHORITY\\NETWORK SERVICE',
+          'N/A',
+          'WORKGROUP\\WIN-U1DFOUPBRPI$',
+          'WIN-U1DFOUPBRPI\\ADMIN',
+          'FactoryTalk Service',
+          'NT AUTHORITY\\LOCAL SERVICE',
+          'NT AUTHORITY\\SYSTEM'
+        )
+    )
+    SELECT
+      UTC_Time,
+      MessageText,
+      UserID,
+      UserFullName,
+      Audience
+    FROM AuditCTE
+    ORDER BY UTC_Time;
     """
-    # WHERE 
-    #     MT.rownum % ? = (CASE WHEN ? > 1 THEN 1 ELSE MT.rownum % ? END)
-    # Parameters: start_dt, end_dt, interval, interval, interval
-    params = [start_dt, end_dt]
 
-    try:
-        cursor.execute(query, params)
-        cols = [col[0] for col in cursor.description]
-        rows = cursor.fetchall()
-        df = pd.DataFrame.from_records(rows, columns=cols)
+    # Query with UTC times
+    df = pd.read_sql_query(query, conn, params=[start_dt, end_dt])
 
-        if not df.empty:
-            # Convert LocalTS to datetime and split into Date/Time
-            df['LocalTS'] = pd.to_datetime(df['LocalTS'])
-            df['Date'] = df['LocalTS'].dt.strftime('%d-%m-%Y')
-            df['Time'] = df['LocalTS'].dt.strftime('%H:%M:%S')
+    if df.empty:
+        return df
 
-            # Drop unnecessary columns
-            df.drop(columns=['LocalTS', 'rownum'], inplace=True)
+    # Convert to proper datetime types
+    df['UTC_Time'] = pd.to_datetime(df['UTC_Time'])
+    
+    # Convert UTC to IST (+5:30)
+    df['IST_Time'] = df['UTC_Time'] + timedelta(hours=5, minutes=30)
+    
+    # Format for display
+    df['Date'] = df['IST_Time'].dt.strftime('%d-%m-%Y')
+    df['Time'] = df['IST_Time'].dt.strftime('%H:%M:%S')
 
-            return df[['Date', 'Time', 'MessageText', 'UserID']]
-        else:
-            return df
+    return df[['Date', 'Time', 'MessageText', 'UserID', 'UTC_Time', 'IST_Time']]
 
-    finally:
-        cursor.close()
-        pass
-    #     conn.close()
 
+
+# def get_audit_data(start_dt, end_dt, config):
+#     """
+#     Fetch AuditReport entries between start_dt and end_dt,
+#     convert timestamp to IST, filter out system/service accounts.
+#     """
+#     conn = get_db_connection(config, db_name="Audit")
+
+#     query = """
+#     WITH AuditCTE AS (
+#       SELECT
+#         TimeStmp,
+#         MessageText,
+#         UserID,
+#         UserFullName,
+#         Audience
+#       FROM AuditReport
+#       WHERE TimeStmp BETWEEN ? AND ?
+#         AND UserID NOT IN (
+#           'NT AUTHORITY\\NETWORK SERVICE',
+#           'N/A',
+#           'WORKGROUP\\WIN-U1DFOUPBRPI$',
+#           'WIN-U1DFOUPBRPI\\ADMIN',
+#           'FactoryTalk Service',
+#           'NT AUTHORITY\\LOCAL SERVICE',
+#           'NT AUTHORITY\\SYSTEM'
+#         )
+#     )
+#     SELECT
+#       DATEADD(SECOND, 19800, TimeStmp) AS LocalTS,
+#       MessageText,
+#       UserID,
+#       UserFullName,
+#       Audience
+#     FROM AuditCTE
+#     ORDER BY TimeStmp;
+#     """
+
+#     # pandas will infer column names from the cursor.description
+#     df = pd.read_sql_query(query, conn, params=[start_dt, end_dt])
+
+#     # If no rows, return empty frame
+#     if df.empty:
+#         return df
+
+#     # Split out Date/Time
+#     df['LocalTS'] = pd.to_datetime(df['LocalTS'])
+#     df['Date'] = df['LocalTS'].dt.strftime('%d-%m-%Y')
+#     df['Time'] = df['LocalTS'].dt.strftime('%H:%M:%S')
+
+#     return df[['Date', 'Time', 'MessageText', 'UserID']]
 
 
 
@@ -269,11 +305,13 @@ def show(databases):
 
     start_dt = datetime.combine(sd, stime)
     end_dt   = datetime.combine(ed, etime)
+    start_dt_utc = start_dt - timedelta(hours=5, minutes=30)
+    end_dt_utc = end_dt - timedelta(hours=5, minutes=30)
     # interval = st.number_input("Time Interval (minutes)", min_value=1, value=10)
     
     if st.button("Generate Report"):
         with st.spinner("Fetching data from database..."):
-            df = get_audit_data(start_dt, end_dt, databases)
+            df = get_audit_data(start_dt_utc, end_dt_utc, databases)
         if df.empty:
             st.warning("No audit records found for that period.")
             return
