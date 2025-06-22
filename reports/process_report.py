@@ -82,165 +82,187 @@ def get_db_connection(config, db_name='Process'):
     
     return pyodbc.connect(conn_str)
 
-# @st.cache_data(ttl=3600)
-# def get_tag_options(config):
-#     conn = get_db_connection(config=config, db_name='Process')
-#     cursor = conn.cursor()
-#     query = """
-#     SELECT 
-#         TagIndex, 
-#         SUBSTRING(TagName, CHARINDEX(']', TagName) + 1, 
-#             CHARINDEX('.', TagName + '.') - CHARINDEX(']', TagName) - 1
-#         ) AS DisplayName
-#     FROM TagTable
-#     WHERE TagIndex NOT IN (0, 1)
-#     ORDER BY TagIndex
-#     """
-#     cursor.execute(query)
-#     columns = [column[0] for column in cursor.description]
-#     data = cursor.fetchall()
-#     return pd.DataFrame.from_records(data, columns=columns)
 
-# @st.cache_data(ttl=3600)
-# def get_tag_options(config):
-#     conn = get_db_connection(config=config, db_name='Process')
-#     cursor = conn.cursor()
-#     query = """
-#     SELECT 
-#         TagIndex, 
-#         SUBSTRING(TagName, CHARINDEX(']', TagName) + 1, 
-#             CHARINDEX('.', TagName + '.') - CHARINDEX(']', TagName) - 1
-#         ) AS DisplayName
-#     FROM TagTable
-#     WHERE TagIndex NOT IN (0, 1)
-#     ORDER BY TagIndex
-#     """
-#     cursor.execute(query)
-#     columns = [column[0] for column in cursor.description]
-#     data = cursor.fetchall()
-#     return pd.DataFrame.from_records(data, columns=columns)
+
 def get_tag_options(config):
-    """Get available tag names from View_1 columns"""
-    # Connect using Process config (which points to ParReport database)
+    """
+    Get available tag names (TagIndex 2–47) in the exact order
+    used by get_report_data().
+    """
     conn = get_db_connection(config=config, db_name='Process')
-    
     query = """
-    SELECT 
-        COLUMN_NAME AS DisplayName
-    FROM 
-        INFORMATION_SCHEMA.COLUMNS
-    WHERE 
-        TABLE_SCHEMA = 'dbo'
-        AND TABLE_NAME = 'View_1'
-        AND COLUMN_NAME NOT IN ('DateAndTime', 'Batch ID', 'User ID')
-    ORDER BY 
-        COLUMN_NAME
+    WITH TagList AS (
+        SELECT  2 AS TagIndex,  'TT-102'   AS DisplayName UNION ALL
+        SELECT  3,            'TT-103'   UNION ALL
+        SELECT  4,            'TT-104'   UNION ALL
+        SELECT  5,            'TT-105'   UNION ALL
+        SELECT  6,            'TT-106'   UNION ALL
+        SELECT  7,            'TT-107'   UNION ALL
+        SELECT  8,            'TT-108'   UNION ALL
+        SELECT  9,            'TT-109'   UNION ALL
+        SELECT 10,            'TT-110'   UNION ALL
+        SELECT 11,            'TT-111'   UNION ALL
+        SELECT 12,            'TT-112'   UNION ALL
+        SELECT 13,            'TT-113'   UNION ALL
+        SELECT 14,            'TT-114'   UNION ALL
+        SELECT 15,            'TT-130'   UNION ALL
+        SELECT 16,            'TT-506'   UNION ALL
+        SELECT 17,            'PT-118'   UNION ALL
+        SELECT 18,            'PT-119'   UNION ALL
+        SELECT 19,            'PT-120'   UNION ALL
+        SELECT 20,            'PT-121'   UNION ALL
+        SELECT 21,            'PT-122'   UNION ALL
+        SELECT 22,            'PT-123'   UNION ALL
+        SELECT 23,            'PT-124'   UNION ALL
+        SELECT 24,            'PT-125'   UNION ALL
+        SELECT 25,            'PT-128'   UNION ALL
+        SELECT 26,            'TMF-101'  UNION ALL
+        SELECT 27,            'TMF-102'  UNION ALL
+        SELECT 28,            'TMF-103'  UNION ALL
+        SELECT 29,            'TMF-104'  UNION ALL
+        SELECT 30,            'TMF-105'  UNION ALL
+        SELECT 31,            'TMF-106'  UNION ALL
+        SELECT 32,            'TMF-107'  UNION ALL
+        SELECT 33,            'TMF-108'  UNION ALL
+        SELECT 34,            'MTR-101'  UNION ALL
+        SELECT 35,            'MTR-102'  UNION ALL
+        SELECT 36,            'MTR-103'  UNION ALL
+        SELECT 37,            'MTR-104'  UNION ALL
+        SELECT 38,            'MTR-105'  UNION ALL
+        SELECT 39,            'MTR-106'  UNION ALL
+        SELECT 40,            'MTR-107'  UNION ALL
+        SELECT 41,            'MTR-108'  UNION ALL
+        SELECT 42,            'MTR-109'  UNION ALL
+        SELECT 43,            'RLT-101'  UNION ALL
+        SELECT 44,            'MFM-101'  UNION ALL
+        SELECT 45,            'pH-101'   UNION ALL
+        SELECT 46,            'pH-102'   UNION ALL
+        SELECT 47,            'OZ-101'
+    )
+    SELECT DisplayName
+    FROM TagList
+    ORDER BY TagIndex;
     """
     df = pd.read_sql(query, conn)
     return df
 
+
+
 def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, config=None):
-    """Get report data from View_1"""
+    """Get report data by pivoting StringTable (Batch/User) and FloatTable (sensors) in SQL."""
     if not selected_tags:
         return pd.DataFrame()
-    
-    # Connect using Process config (which points to ParReport database)
+
     conn = get_db_connection(config=config, db_name='Process')
-    
-    # Convert datetimes to strings
-    start_str = start_datetime.strftime('%Y-%m-%d %H:%M:%S')
-    end_str = end_datetime.strftime('%Y-%m-%d %H:%M:%S')
 
-    # Build query
-    query = f"""
-    SELECT 
-        DateAndTime,
-        {', '.join([f'[{tag}]' for tag in selected_tags])}
-    FROM [dbo].[View_1]
-    WHERE DateAndTime BETWEEN ? AND ?
+    # build the pivot-CTE SQL
+    query = """
+    WITH
+      StringPivot AS (
+        SELECT
+          DateAndTime,
+          MAX(CASE WHEN TagIndex = 1 THEN Val END) AS [Batch ID],
+          MAX(CASE WHEN TagIndex = 0 THEN Val END) AS [User ID]
+        FROM dbo.StringTable
+        WHERE TagIndex IN (0,1)
+        GROUP BY DateAndTime
+      ),
+      FloatPivot AS (
+        SELECT
+          DateAndTime,
+          MAX(CASE WHEN TagIndex =  2 THEN Val END)  AS [TT-102],
+          MAX(CASE WHEN TagIndex =  3 THEN Val END)  AS [TT-103],
+          MAX(CASE WHEN TagIndex =  4 THEN Val END)  AS [TT-104],
+          MAX(CASE WHEN TagIndex =  5 THEN Val END)  AS [TT-105],
+          MAX(CASE WHEN TagIndex =  6 THEN Val END)  AS [TT-106],
+          MAX(CASE WHEN TagIndex =  7 THEN Val END)  AS [TT-107],
+          MAX(CASE WHEN TagIndex =  8 THEN Val END)  AS [TT-108],
+          MAX(CASE WHEN TagIndex =  9 THEN Val END)  AS [TT-109],
+          MAX(CASE WHEN TagIndex = 10 THEN Val END)  AS [TT-110],
+          MAX(CASE WHEN TagIndex = 11 THEN Val END)  AS [TT-111],
+          MAX(CASE WHEN TagIndex = 12 THEN Val END)  AS [TT-112],
+          MAX(CASE WHEN TagIndex = 13 THEN Val END)  AS [TT-113],
+          MAX(CASE WHEN TagIndex = 14 THEN Val END)  AS [TT-114],
+          MAX(CASE WHEN TagIndex = 15 THEN Val END)  AS [TT-130],
+          MAX(CASE WHEN TagIndex = 16 THEN Val END)  AS [TT-506],
+          MAX(CASE WHEN TagIndex = 17 THEN Val END)  AS [PT-118],
+          MAX(CASE WHEN TagIndex = 18 THEN Val END)  AS [PT-119],
+          MAX(CASE WHEN TagIndex = 19 THEN Val END)  AS [PT-120],
+          MAX(CASE WHEN TagIndex = 20 THEN Val END)  AS [PT-121],
+          MAX(CASE WHEN TagIndex = 21 THEN Val END)  AS [PT-122],
+          MAX(CASE WHEN TagIndex = 22 THEN Val END)  AS [PT-123],
+          MAX(CASE WHEN TagIndex = 23 THEN Val END)  AS [PT-124],
+          MAX(CASE WHEN TagIndex = 24 THEN Val END)  AS [PT-125],
+          MAX(CASE WHEN TagIndex = 25 THEN Val END)  AS [PT-128],
+          MAX(CASE WHEN TagIndex = 26 THEN Val END)  AS [TMF-101],
+          MAX(CASE WHEN TagIndex = 27 THEN Val END)  AS [TMF-102],
+          MAX(CASE WHEN TagIndex = 28 THEN Val END)  AS [TMF-103],
+          MAX(CASE WHEN TagIndex = 29 THEN Val END)  AS [TMF-104],
+          MAX(CASE WHEN TagIndex = 30 THEN Val END)  AS [TMF-105],
+          MAX(CASE WHEN TagIndex = 31 THEN Val END)  AS [TMF-106],
+          MAX(CASE WHEN TagIndex = 32 THEN Val END)  AS [TMF-107],
+          MAX(CASE WHEN TagIndex = 33 THEN Val END)  AS [TMF-108],
+          MAX(CASE WHEN TagIndex = 34 THEN Val END)  AS [MTR-101],
+          MAX(CASE WHEN TagIndex = 35 THEN Val END)  AS [MTR-102],
+          MAX(CASE WHEN TagIndex = 36 THEN Val END)  AS [MTR-103],
+          MAX(CASE WHEN TagIndex = 37 THEN Val END)  AS [MTR-104],
+          MAX(CASE WHEN TagIndex = 38 THEN Val END)  AS [MTR-105],
+          MAX(CASE WHEN TagIndex = 39 THEN Val END)  AS [MTR-106],
+          MAX(CASE WHEN TagIndex = 40 THEN Val END)  AS [MTR-107],
+          MAX(CASE WHEN TagIndex = 41 THEN Val END)  AS [MTR-108],
+          MAX(CASE WHEN TagIndex = 42 THEN Val END)  AS [MTR-109],
+          MAX(CASE WHEN TagIndex = 43 THEN Val END)  AS [RLT-101],
+          MAX(CASE WHEN TagIndex = 44 THEN Val END)  AS [MFM-101],
+          MAX(CASE WHEN TagIndex = 45 THEN Val END)  AS [pH-101],
+          MAX(CASE WHEN TagIndex = 46 THEN Val END)  AS [pH-102],
+          MAX(CASE WHEN TagIndex = 47 THEN Val END)  AS [OZ-101]
+        FROM dbo.FloatTable
+        WHERE TagIndex BETWEEN 2 AND 47
+        GROUP BY DateAndTime
+      )
+    SELECT
+      s.DateAndTime,
+      s.[Batch ID],
+      s.[User ID],
+      f.[TT-102], f.[TT-103], f.[TT-104], f.[TT-105],
+      f.[TT-106], f.[TT-107], f.[TT-108], f.[TT-109],
+      f.[TT-110], f.[TT-111], f.[TT-112], f.[TT-113],
+      f.[TT-114], f.[TT-130], f.[TT-506],
+      f.[PT-118], f.[PT-119], f.[PT-120], f.[PT-121],
+      f.[PT-122], f.[PT-123], f.[PT-124], f.[PT-125],
+      f.[PT-128],
+      f.[TMF-101], f.[TMF-102], f.[TMF-103], f.[TMF-104],
+      f.[TMF-105], f.[TMF-106], f.[TMF-107], f.[TMF-108],
+      f.[MTR-101], f.[MTR-102], f.[MTR-103], f.[MTR-104],
+      f.[MTR-105], f.[MTR-106], f.[MTR-107], f.[MTR-108],
+      f.[MTR-109],
+      f.[RLT-101], f.[MFM-101], f.[pH-101], f.[pH-102],
+      f.[OZ-101]
+    FROM StringPivot AS s
+    INNER JOIN FloatPivot AS f
+      ON s.DateAndTime = f.DateAndTime
+    WHERE s.DateAndTime BETWEEN ? AND ?
+    ORDER BY s.DateAndTime;
     """
-    
-    params = [start_str, end_str]
-    
-    # if batch_id:
-    #     query += " AND [Batch ID] = ?"
-    #     params.append(str(batch_id))
-    
-    # Execute query
-    df = pd.read_sql(query, conn, params=params)
-    
-    if not df.empty:
-        # Format datetime (IST)
-        # df['DateAndTime'] = pd.to_datetime(df['DateAndTime']).dt.strftime('%d-%m-%Y %H:%M')
 
-        # df['Date'] = df['DateAndTime'].dt.strftime('%d-%m-%Y')
-        # df['Time'] = df['DateAndTime'].dt.strftime('%H:%M:%S')
-        # df.drop()
-        # Round numeric values (keep as float)
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        df[numeric_cols] = df[numeric_cols].round(2)
-        
+    params = [ start_datetime, end_datetime ]
+    # if batch_id:
+    #     params.append(batch_id)
+
+    df = pd.read_sql(query, conn, params=params)
+
+    # now drop any columns the user didn’t select
+    keep = ['DateAndTime', 'Batch ID', 'User ID'] + selected_tags
+    df = df.loc[:, [c for c in keep if c in df.columns]]
+
+    if not df.empty:
+        df['DateAndTime'] = pd.to_datetime(df['DateAndTime'])
+        df[['Date','Time']] = df['DateAndTime'].dt.strftime('%d-%m-%Y %H:%M').str.split(' ', expand=True)
+        numeric = df.select_dtypes('number').columns
+        df[numeric] = df[numeric].round(2)
     return df
 
-# @st.cache_data
-# def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, config=None):
-#     conn = get_db_connection(config=config)
-#     cursor = conn.cursor()
 
-#     tag_options = get_tag_options(config=config)
-#     tag_indices = tag_options[tag_options['DisplayName'].isin(selected_tags)]['TagIndex'].tolist()
-#     if not tag_indices:
-#         return pd.DataFrame()
-
-#     query = """
-#     SELECT 
-#         f.DateAndTime,
-#         t.TagIndex,
-#         SUBSTRING(t.TagName, CHARINDEX(']', t.TagName) + 1, 
-#             CHARINDEX('.', t.TagName + '.') - CHARINDEX(']', t.TagName) - 1) AS DisplayName,
-#         f.Val,
-#         s.BatchID,
-#         s.UserID
-#     FROM FloatTable f
-#     JOIN TagTable t ON f.TagIndex = t.TagIndex
-#     LEFT JOIN (
-#         SELECT DateAndTime,
-#                MAX(CASE WHEN TagIndex = 1 THEN Val END) AS BatchID,
-#                MAX(CASE WHEN TagIndex = 0 THEN Val END) AS UserID
-#         FROM StringTable
-#         WHERE TagIndex IN (0, 1)
-#         GROUP BY DateAndTime
-#     ) s ON f.DateAndTime = s.DateAndTime
-#     WHERE f.DateAndTime BETWEEN ? AND ?
-#     AND f.TagIndex IN ({})
-#     """.format(','.join(['?'] * len(tag_indices)))
-
-#     params = [start_datetime, end_datetime] + tag_indices
-
-#     # if batch_id:
-#     #     query += " AND s.BatchID = ?"
-#     #     params.append(batch_id)
-
-#     cursor.execute(query, params)
-#     columns = [column[0] for column in cursor.description]
-#     data = cursor.fetchall()
-#     df = pd.DataFrame.from_records(data, columns=columns)
-
-#     if not df.empty:
-#         df = df.pivot_table(
-#             index=['DateAndTime', 'BatchID', 'UserID'],
-#             columns='DisplayName',
-#             values='Val'
-#         ).reset_index()
-#         df['DateAndTime'] = df['DateAndTime'].dt.strftime('%d-%m-%Y %H:%M')
-
-#         # Round numeric values to 2 decimals
-#         numeric_cols = df.select_dtypes(include=['number']).columns
-#         for col in numeric_cols:
-#             df[col] = df[col].map(lambda x: f"{x:.2f}")
-#         # df[numeric_cols] = df[numeric_cols].round(2)
-
-#     return df
 
 
 def generate_pdf_report(df, title="Process Data Report", params=None):
@@ -601,13 +623,6 @@ def show(databases):
         with st.spinner("Fetching data from database..."):
             df = get_report_data(start_datetime, end_datetime, selected_tags, batch_id, config=databases)
 
-        # if not df.empty:
-        #     # Apply sampling interval
-        #     if interval > 1:
-        #         df['datetime_obj'] = pd.to_datetime(df['DateAndTime'], format='%d-%m-%Y %H:%M')
-        #         df['date'] = pd.to_datetime(df['datetime_obj'].dt.date)
-        #         df = df[df['datetime_obj'].dt.minute % interval == 0].drop(columns=['datetime_obj'])
-        #         df.drop(columns=['BatchID', 'UserID'], inplace=True)
         if not df.empty:
             # Apply sampling interval
             if interval >= 1:
@@ -622,7 +637,7 @@ def show(databases):
                 df = df[df['DateAndTime'].dt.minute % interval == 0]
 
                 # Drop original DateAndTime and unnecessary columns
-                df.drop(columns=['DateAndTime', 'BatchID', 'UserID'], inplace=True, errors='ignore')
+                df.drop(columns=['DateAndTime', 'Batch ID', 'User ID'], inplace=True, errors='ignore')
                 # Reorder columns: Date first, Time second, then the rest
                 cols = ['Date', 'Time'] + [col for col in df.columns if col not in ['Date', 'Time']]
                 df = df[cols]
