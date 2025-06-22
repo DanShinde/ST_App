@@ -17,7 +17,8 @@ from itertools import islice
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.enums import TA_CENTER
-
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 
 
 # @st.cache_resource

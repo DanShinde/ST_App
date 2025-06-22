@@ -48,7 +48,8 @@ def get_alarm_data(start_dt_utc, end_dt_utc, config):
     # Format for display
     df['Date'] = df['IST_Time'].dt.strftime('%d-%m-%Y')
     df['Time'] = df['IST_Time'].dt.strftime('%H:%M:%S')
-
+    # Remove duplicates where Date, Time, and Alarm are identical
+    df = df.drop_duplicates(subset=['Date', 'Time', 'Alarm'])
     return df[['Date', 'Time', 'Alarm']]
 
 

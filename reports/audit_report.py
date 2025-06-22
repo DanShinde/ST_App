@@ -76,6 +76,8 @@ def get_audit_data(start_dt, end_dt, config):
     df['Date'] = df['IST_Time'].dt.strftime('%d-%m-%Y')
     df['Time'] = df['IST_Time'].dt.strftime('%H:%M:%S')
 
+    # Remove duplicates where Date, Time, and Alarm are identical
+    df = df.drop_duplicates(subset=['Date', 'Time', 'MessageText', 'UserID'])
     return df[['Date', 'Time', 'MessageText', 'UserID']]
 
 

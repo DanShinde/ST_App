@@ -6,6 +6,7 @@ reportlab
 jinja2
 python-dotenv
 openpyxl
+sqlalchemy
 # pyinstaller
 # docker tag reporting-service:latest danshinde/reporting-service:1.0.0
 # docker push danshinde/reporting-service:1.0.0
