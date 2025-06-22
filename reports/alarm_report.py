@@ -49,7 +49,7 @@ def get_alarm_data(start_dt_utc, end_dt_utc, config):
     df['Date'] = df['IST_Time'].dt.strftime('%d-%m-%Y')
     df['Time'] = df['IST_Time'].dt.strftime('%H:%M:%S')
 
-    return df[['Date', 'Time', 'Alarm', 'UTC_Time', 'IST_Time']]
+    return df[['Date', 'Time', 'Alarm']]
 
 
 def generate_alarm_pdf_report(df, params):

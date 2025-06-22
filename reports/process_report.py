@@ -1,4 +1,5 @@
 # reports/process_report.py
+import pytz
 import streamlit as st
 import os
 import pandas as pd
@@ -32,7 +33,7 @@ def get_latest_user(config):
         cursor = conn.cursor()
         query = """
         SELECT TOP (1)
-            DATEADD(SECOND, 19800, TimeStmp) AS TimeStmp,
+            DATEADD(SECOND, 9900, TimeStmp) AS TimeStmp,
             UserID
         FROM AuditReport
         WHERE (UserID <> 'NT AUTHORITY\\NETWORK SERVICE') 
@@ -80,86 +81,165 @@ def get_db_connection(config, db_name='Process'):
     
     return pyodbc.connect(conn_str)
 
+# @st.cache_data(ttl=3600)
+# def get_tag_options(config):
+#     conn = get_db_connection(config=config, db_name='Process')
+#     cursor = conn.cursor()
+#     query = """
+#     SELECT 
+#         TagIndex, 
+#         SUBSTRING(TagName, CHARINDEX(']', TagName) + 1, 
+#             CHARINDEX('.', TagName + '.') - CHARINDEX(']', TagName) - 1
+#         ) AS DisplayName
+#     FROM TagTable
+#     WHERE TagIndex NOT IN (0, 1)
+#     ORDER BY TagIndex
+#     """
+#     cursor.execute(query)
+#     columns = [column[0] for column in cursor.description]
+#     data = cursor.fetchall()
+#     return pd.DataFrame.from_records(data, columns=columns)
 
 # @st.cache_data(ttl=3600)
+# def get_tag_options(config):
+#     conn = get_db_connection(config=config, db_name='Process')
+#     cursor = conn.cursor()
+#     query = """
+#     SELECT 
+#         TagIndex, 
+#         SUBSTRING(TagName, CHARINDEX(']', TagName) + 1, 
+#             CHARINDEX('.', TagName + '.') - CHARINDEX(']', TagName) - 1
+#         ) AS DisplayName
+#     FROM TagTable
+#     WHERE TagIndex NOT IN (0, 1)
+#     ORDER BY TagIndex
+#     """
+#     cursor.execute(query)
+#     columns = [column[0] for column in cursor.description]
+#     data = cursor.fetchall()
+#     return pd.DataFrame.from_records(data, columns=columns)
 def get_tag_options(config):
+    """Get available tag names from View_1 columns"""
+    # Connect using Process config (which points to ParReport database)
     conn = get_db_connection(config=config, db_name='Process')
-    cursor = conn.cursor()
+    
     query = """
     SELECT 
-        TagIndex, 
-        SUBSTRING(TagName, CHARINDEX(']', TagName) + 1, 
-            CHARINDEX('.', TagName + '.') - CHARINDEX(']', TagName) - 1
-        ) AS DisplayName
-    FROM TagTable
-    WHERE TagIndex NOT IN (0, 1)
-    ORDER BY TagIndex
+        COLUMN_NAME AS DisplayName
+    FROM 
+        INFORMATION_SCHEMA.COLUMNS
+    WHERE 
+        TABLE_SCHEMA = 'dbo'
+        AND TABLE_NAME = 'View_1'
+        AND COLUMN_NAME NOT IN ('DateAndTime', 'Batch ID', 'User ID')
+    ORDER BY 
+        COLUMN_NAME
     """
-    cursor.execute(query)
-    columns = [column[0] for column in cursor.description]
-    data = cursor.fetchall()
-    return pd.DataFrame.from_records(data, columns=columns)
+    df = pd.read_sql(query, conn)
+    return df
 
+def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, config=None):
+    """Get report data from View_1"""
+    if not selected_tags:
+        return pd.DataFrame()
+    
+    # Connect using Process config (which points to ParReport database)
+    conn = get_db_connection(config=config, db_name='Process')
+    
+    # Convert datetimes to strings
+    start_str = start_datetime.strftime('%Y-%m-%d %H:%M:%S')
+    end_str = end_datetime.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Build query
+    query = f"""
+    SELECT 
+        DateAndTime,
+        {', '.join([f'[{tag}]' for tag in selected_tags])}
+    FROM [dbo].[View_1]
+    WHERE DateAndTime BETWEEN ? AND ?
+    """
+    
+    params = [start_str, end_str]
+    
+    # if batch_id:
+    #     query += " AND [Batch ID] = ?"
+    #     params.append(str(batch_id))
+    
+    # Execute query
+    df = pd.read_sql(query, conn, params=params)
+    
+    if not df.empty:
+        # Format datetime (IST)
+        # df['DateAndTime'] = pd.to_datetime(df['DateAndTime']).dt.strftime('%d-%m-%Y %H:%M')
+
+        # df['Date'] = df['DateAndTime'].dt.strftime('%d-%m-%Y')
+        # df['Time'] = df['DateAndTime'].dt.strftime('%H:%M:%S')
+        # df.drop()
+        # Round numeric values (keep as float)
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        df[numeric_cols] = df[numeric_cols].round(2)
+        
+    return df
 
 # @st.cache_data
-def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, config=None):
-    conn = get_db_connection(config=config)
-    cursor = conn.cursor()
+# def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, config=None):
+#     conn = get_db_connection(config=config)
+#     cursor = conn.cursor()
 
-    tag_options = get_tag_options(config=config)
-    tag_indices = tag_options[tag_options['DisplayName'].isin(selected_tags)]['TagIndex'].tolist()
-    if not tag_indices:
-        return pd.DataFrame()
+#     tag_options = get_tag_options(config=config)
+#     tag_indices = tag_options[tag_options['DisplayName'].isin(selected_tags)]['TagIndex'].tolist()
+#     if not tag_indices:
+#         return pd.DataFrame()
 
-    query = """
-    SELECT 
-        f.DateAndTime,
-        t.TagIndex,
-        SUBSTRING(t.TagName, CHARINDEX(']', t.TagName) + 1, 
-            CHARINDEX('.', t.TagName + '.') - CHARINDEX(']', t.TagName) - 1) AS DisplayName,
-        f.Val,
-        s.BatchID,
-        s.UserID
-    FROM FloatTable f
-    JOIN TagTable t ON f.TagIndex = t.TagIndex
-    LEFT JOIN (
-        SELECT DateAndTime,
-               MAX(CASE WHEN TagIndex = 1 THEN Val END) AS BatchID,
-               MAX(CASE WHEN TagIndex = 0 THEN Val END) AS UserID
-        FROM StringTable
-        WHERE TagIndex IN (0, 1)
-        GROUP BY DateAndTime
-    ) s ON f.DateAndTime = s.DateAndTime
-    WHERE f.DateAndTime BETWEEN ? AND ?
-    AND f.TagIndex IN ({})
-    """.format(','.join(['?'] * len(tag_indices)))
+#     query = """
+#     SELECT 
+#         f.DateAndTime,
+#         t.TagIndex,
+#         SUBSTRING(t.TagName, CHARINDEX(']', t.TagName) + 1, 
+#             CHARINDEX('.', t.TagName + '.') - CHARINDEX(']', t.TagName) - 1) AS DisplayName,
+#         f.Val,
+#         s.BatchID,
+#         s.UserID
+#     FROM FloatTable f
+#     JOIN TagTable t ON f.TagIndex = t.TagIndex
+#     LEFT JOIN (
+#         SELECT DateAndTime,
+#                MAX(CASE WHEN TagIndex = 1 THEN Val END) AS BatchID,
+#                MAX(CASE WHEN TagIndex = 0 THEN Val END) AS UserID
+#         FROM StringTable
+#         WHERE TagIndex IN (0, 1)
+#         GROUP BY DateAndTime
+#     ) s ON f.DateAndTime = s.DateAndTime
+#     WHERE f.DateAndTime BETWEEN ? AND ?
+#     AND f.TagIndex IN ({})
+#     """.format(','.join(['?'] * len(tag_indices)))
 
-    params = [start_datetime, end_datetime] + tag_indices
+#     params = [start_datetime, end_datetime] + tag_indices
 
-    # if batch_id:
-    #     query += " AND s.BatchID = ?"
-    #     params.append(batch_id)
+#     # if batch_id:
+#     #     query += " AND s.BatchID = ?"
+#     #     params.append(batch_id)
 
-    cursor.execute(query, params)
-    columns = [column[0] for column in cursor.description]
-    data = cursor.fetchall()
-    df = pd.DataFrame.from_records(data, columns=columns)
+#     cursor.execute(query, params)
+#     columns = [column[0] for column in cursor.description]
+#     data = cursor.fetchall()
+#     df = pd.DataFrame.from_records(data, columns=columns)
 
-    if not df.empty:
-        df = df.pivot_table(
-            index=['DateAndTime', 'BatchID', 'UserID'],
-            columns='DisplayName',
-            values='Val'
-        ).reset_index()
-        df['DateAndTime'] = df['DateAndTime'].dt.strftime('%d-%m-%Y %H:%M')
+#     if not df.empty:
+#         df = df.pivot_table(
+#             index=['DateAndTime', 'BatchID', 'UserID'],
+#             columns='DisplayName',
+#             values='Val'
+#         ).reset_index()
+#         df['DateAndTime'] = df['DateAndTime'].dt.strftime('%d-%m-%Y %H:%M')
 
-        # Round numeric values to 2 decimals
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        for col in numeric_cols:
-            df[col] = df[col].map(lambda x: f"{x:.2f}")
-        # df[numeric_cols] = df[numeric_cols].round(2)
+#         # Round numeric values to 2 decimals
+#         numeric_cols = df.select_dtypes(include=['number']).columns
+#         for col in numeric_cols:
+#             df[col] = df[col].map(lambda x: f"{x:.2f}")
+#         # df[numeric_cols] = df[numeric_cols].round(2)
 
-    return df
+#     return df
 
 
 def generate_pdf_report(df, title="Process Data Report", params=None):
@@ -414,7 +494,7 @@ def show_styled_table(df):
     print(df.head())
         # Remove 'DisplayName' column
     df_no_index = df.drop(columns=['DisplayName'], errors='ignore')
-    
+    df_no_index = df
     # Reset index to avoid showing internal IDs
     df_no_index = df_no_index.reset_index(drop=True)
     
@@ -455,11 +535,11 @@ def show_styled_table(df):
         width: 120px;
     }
                 
-    /* Hide the first column (DisplayName) */
+    /* Hide the first column (DisplayName) 
     .styled-table td:nth-child(1), 
     .styled-table th:nth-child(1) {
         display: none;
-    }
+    } */
                 
     /* Allow wrapping for long-text columns (e.g., MessageText or Value) */
     .styled-table td:nth-child(n+3) {

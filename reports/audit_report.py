@@ -76,7 +76,7 @@ def get_audit_data(start_dt, end_dt, config):
     df['Date'] = df['IST_Time'].dt.strftime('%d-%m-%Y')
     df['Time'] = df['IST_Time'].dt.strftime('%H:%M:%S')
 
-    return df[['Date', 'Time', 'MessageText', 'UserID', 'UTC_Time', 'IST_Time']]
+    return df[['Date', 'Time', 'MessageText', 'UserID']]
 
 
 
