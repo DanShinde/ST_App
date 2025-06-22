@@ -260,6 +260,8 @@ def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, 
         df[['Date','Time']] = df['DateAndTime'].dt.strftime('%d-%m-%Y %H:%M').str.split(' ', expand=True)
         numeric = df.select_dtypes('number').columns
         df[numeric] = df[numeric].round(2)
+    
+    df = df.drop_duplicates(subset=['Date','Time'])
     return df
 
 
