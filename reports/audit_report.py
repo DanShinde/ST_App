@@ -43,8 +43,8 @@ def get_audit_data(start_dt, end_dt, config):
         AND UserID NOT IN (
           'NT AUTHORITY\\NETWORK SERVICE',
           'N/A',
-          'WORKGROUP\\WIN-U1DFOUPBRPI$',
-          'WIN-U1DFOUPBRPI\\ADMIN',
+          'WORKGROUP\\WIN-U1DFOUPBRP2$',
+          'WIN-U1DFOUPBRP2\\ADMIN',
           'FactoryTalk Service',
           'NT AUTHORITY\\LOCAL SERVICE',
           'NT AUTHORITY\\SYSTEM'
@@ -102,8 +102,8 @@ def get_audit_data(start_dt, end_dt, config):
 #         AND UserID NOT IN (
 #           'NT AUTHORITY\\NETWORK SERVICE',
 #           'N/A',
-#           'WORKGROUP\\WIN-U1DFOUPBRPI$',
-#           'WIN-U1DFOUPBRPI\\ADMIN',
+#           'WORKGROUP\\WIN-U1DFOUPBRP2$',
+#           'WIN-U1DFOUPBRP2\\ADMIN',
 #           'FactoryTalk Service',
 #           'NT AUTHORITY\\LOCAL SERVICE',
 #           'NT AUTHORITY\\SYSTEM'

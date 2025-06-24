@@ -17,8 +17,6 @@ from itertools import islice
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.enums import TA_CENTER
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import URL
 
 
 # @st.cache_resource
@@ -39,8 +37,8 @@ def get_latest_user(config):
         FROM AuditReport
         WHERE (UserID <> 'NT AUTHORITY\\NETWORK SERVICE') 
           AND (UserID <> 'N/A') 
-          AND (UserID <> 'WORKGROUP\\WIN-U1DFOUPBRPI$') 
-          AND (UserID <> 'WIN-U1DFOUPBRPI\\ADMIN') 
+          AND (UserID <> 'WORKGROUP\\WIN-U1DFOUPBRP2$') 
+          AND (UserID <> 'WWIN-U1DFOUPBRP2$\\ADMIN') 
           AND (UserID <> 'FactoryTalk Service') 
           AND (UserID <> 'NT AUTHORITY\\LOCAL SERVICE') 
           AND (UserID <> 'NT AUTHORITY\\SYSTEM')

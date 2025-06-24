@@ -3,6 +3,29 @@ import streamlit as st
 from reports import process_report, audit_report, alarm_report
 import json
 
+# Hide Deploy button and hamburger menu using custom CSS
+hide_streamlit_style = """
+    <style>
+        /* Hide Deploy button */
+        .stAppDeployButton {
+            display: none;
+        }
+
+        /* Hide hamburger menu (☰) */
+        #MainMenu {
+            display: none;
+        }
+
+        /* Optional: Hide footer (removes 'made with Streamlit' text) */
+        .footer {
+            visibility: hidden;
+            height: 0%;
+        }
+    </style>
+"""
+
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 st.set_page_config(page_title="Reporting System", layout="wide")
 
 def load_db_config():
@@ -64,14 +87,3 @@ elif st.session_state.report_type == "Alarm Report":
 else:
     st.info("Please select a report from the sidebar.")
 
-# report_type = st.sidebar.selectbox(
-#     "Select Report Type",
-#     ["Process Report", "Audit Report", "Alarm Report"]
-# )
-
-# if report_type == "Process Report":
-#     process_report.show(databases)
-# elif report_type == "Audit Report":
-#     audit_report.show(databases)
-# elif report_type == "Alarm Report":
-#     alarm_report.show(databases)
