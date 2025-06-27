@@ -1,4 +1,5 @@
 # reports/process_report.py
+import base64
 import pytz
 import streamlit as st
 import os
@@ -17,6 +18,8 @@ from itertools import islice
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.enums import TA_CENTER
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 
 
 # @st.cache_resource
@@ -37,8 +40,8 @@ def get_latest_user(config):
         FROM AuditReport
         WHERE (UserID <> 'NT AUTHORITY\\NETWORK SERVICE') 
           AND (UserID <> 'N/A') 
-          AND (UserID <> 'WORKGROUP\\WIN-U1DFOUPBRP2$') 
-          AND (UserID <> 'WWIN-U1DFOUPBRP2$\\ADMIN') 
+          AND (UserID <> 'WORKGROUP\\WIN-U1DFOUPBRPI$') 
+          AND (UserID <> 'WIN-U1DFOUPBRPI\\ADMIN') 
           AND (UserID <> 'FactoryTalk Service') 
           AND (UserID <> 'NT AUTHORITY\\LOCAL SERVICE') 
           AND (UserID <> 'NT AUTHORITY\\SYSTEM')
@@ -257,7 +260,13 @@ def get_report_data(start_datetime, end_datetime, selected_tags, batch_id=None, 
         df['DateAndTime'] = pd.to_datetime(df['DateAndTime'])
         df[['Date','Time']] = df['DateAndTime'].dt.strftime('%d-%m-%Y %H:%M').str.split(' ', expand=True)
         numeric = df.select_dtypes('number').columns
-        df[numeric] = df[numeric].round(2)
+        # df[numeric] = df[numeric].round(2)
+        # first round, then format each cell as a string with 2 decimals
+        df[numeric] = (
+            df[numeric]
+            .round(2)
+            .applymap(lambda x: f"{x:.2f}")
+        )
     
     df = df.drop_duplicates(subset=['Date','Time'])
     return df
@@ -654,19 +663,35 @@ def show(databases):
                 "Printed By": get_latest_user(databases)
             }
 
-            pdf_bytes = generate_pdf_report(df, params=report_params)
-            st.download_button(
-                label="📥 Print Report",
-                data=pdf_bytes,
-                file_name=f"Process_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime='application/pdf'
-            )
-            # st.table(df.hide_index())
-            # st.table(df, hide_index=True, use_container_width=True)
+            pdf = generate_pdf_report(df, params=report_params)
+            # st.download_button(
+            #     label="📥 Print Report",
+            #     data=pdf,
+            #     file_name=f"Process_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+            #     mime='application/pdf'
+            # )
             df_no_index = df.reset_index(drop=True, inplace=False)
             
-            # st.table(df_no_index)
-            show_styled_table(df)
+            # Encode the PDF to base64 so it can be rendered in HTML
+            pdf_b64 = base64.b64encode(pdf).decode()
+
+            # Inject HTML + JS to display and auto-print the PDF
+            st.markdown(f"""
+                <style>
+                    .pdf-container {{
+                        width: 100%;
+                        height: 80vh;
+                        border: none;
+                    }}
+                </style>
+                <h4>📄 Previewing Report </h4>
+                <iframe class="pdf-container" 
+                        src="data:application/pdf;base64,{pdf_b64}" 
+                        type="application/pdf"
+                        onload="this.contentWindow.print();">
+                </iframe>
+            """, unsafe_allow_html=True)
+            # show_styled_table(df)
         else:
             st.warning("No data found for the selected parameters")
     elif batch_id == "":

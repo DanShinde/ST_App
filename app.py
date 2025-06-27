@@ -3,30 +3,21 @@ import streamlit as st
 from reports import process_report, audit_report, alarm_report
 import json
 
-# Hide Deploy button and hamburger menu using custom CSS
+st.set_page_config(page_title="Reporting System", layout="wide")
+
+# Fully hide Streamlit header/footer and extra elements
 hide_streamlit_style = """
     <style>
-        /* Hide Deploy button */
-        .stAppDeployButton {
-            display: none;
-        }
-
-        /* Hide hamburger menu (☰) */
-        #MainMenu {
-            display: none;
-        }
-
-        /* Optional: Hide footer (removes 'made with Streamlit' text) */
-        .footer {
-            visibility: hidden;
-            height: 0%;
-        }
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        .stApp > header {display: none;}
+        .viewerBadge_container__1QSob {display: none;}
+        div.stAppToolbar   { display: none !important; }
+        header.stAppHeader { display: none !important; }
     </style>
 """
 
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
-st.set_page_config(page_title="Reporting System", layout="wide")
 
 def load_db_config():
     try:
@@ -50,16 +41,7 @@ with col1:
 
 with col2:
     st.title("📊 Reporting System")
-# Fully hide Streamlit header/footer and extra elements
-hide_streamlit_style = """
-    <style>
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        .stApp > header {display: none;}
-        .viewerBadge_container__1QSob {display: none;}
-    </style>
-"""
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 
 # --- initialize session state for report type if not already set ---
 if "report_type" not in st.session_state:
@@ -86,4 +68,3 @@ elif st.session_state.report_type == "Alarm Report":
     alarm_report.show(databases)
 else:
     st.info("Please select a report from the sidebar.")
-

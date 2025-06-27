@@ -11,6 +11,7 @@ from reportlab.platypus import (
     BaseDocTemplate, Frame, PageTemplate,
     Table, TableStyle, Image, PageBreak
 )
+import base64
 
 # reuse your connection and canvas-numbering from process_report
 from .process_report import get_db_connection, get_latest_user, NumberedCanvas
@@ -211,12 +212,32 @@ def show(databases):
 
             pdf = generate_alarm_pdf_report(df, params)
 
-            st.download_button(
-                label="📥 Print Report",
-                data=pdf,
-                file_name=f"Alarm_Report_{datetime.now():%Y%m%d_%H%M}.pdf",
-                mime="application/pdf"
-            )
+            # st.download_button(
+            #     label="📥 Print Report",
+            #     data=pdf,
+            #     file_name=f"Alarm_Report_{datetime.now():%Y%m%d_%H%M}.pdf",
+            #     mime="application/pdf"
+            # )
+            
+            # Encode the PDF to base64 so it can be rendered in HTML
+            pdf_b64 = base64.b64encode(pdf).decode()
+
+            # Inject HTML + JS to display and auto-print the PDF
+            st.markdown(f"""
+                <style>
+                    .pdf-container {{
+                        width: 100%;
+                        height: 80vh;
+                        border: none;
+                    }}
+                </style>
+                <h4>📄 Previewing Report </h4>
+                <iframe class="pdf-container" 
+                        src="data:application/pdf;base64,{pdf_b64}" 
+                        type="application/pdf"
+                        onload="this.contentWindow.print();">
+                </iframe>
+            """, unsafe_allow_html=True)
 
             # --- Style the DataFrame as HTML table ---
             styled_html = df.to_html(index=False, classes='styled-table', escape=False)
@@ -261,4 +282,4 @@ def show(databases):
             """, unsafe_allow_html=True)
 
             # Display the styled HTML table
-            st.markdown(styled_html, unsafe_allow_html=True)
+            # st.markdown(styled_html, unsafe_allow_html=True)

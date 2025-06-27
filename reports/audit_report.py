@@ -21,6 +21,8 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 # reuse your connection, user-lookup, and canvas-numbering from process_report
 from .process_report import get_db_connection, get_latest_user, NumberedCanvas
+import base64
+from streamlit.components.v1 import html
 
 
 def get_audit_data(start_dt, end_dt, config):
@@ -29,11 +31,17 @@ def get_audit_data(start_dt, end_dt, config):
     convert timestamp to IST, filter out system/service accounts.
     """
     conn = get_db_connection(config, db_name="Audit")
+    server_name = conn.execute(
+        "SELECT CAST(SERVERPROPERTY('MachineName') AS sysname)"
+    ).fetchval()
+    # print(f"Connected to server: {server_name}")
+    # print(f"%\\{server_name}$")
+    # print(f"{server_name}\\ADMIN")
 
-    query = """
+    query = r"""
     WITH AuditCTE AS (
       SELECT
-        TimeStmp AS UTC_Time,
+        TimeStmp    AS UTC_Time,
         MessageText,
         UserID,
         UserFullName,
@@ -41,14 +49,16 @@ def get_audit_data(start_dt, end_dt, config):
       FROM AuditReport
       WHERE TimeStmp BETWEEN ? AND ?
         AND UserID NOT IN (
-          'NT AUTHORITY\\NETWORK SERVICE',
+          'NT AUTHORITY\NETWORK SERVICE',
           'N/A',
-          'WORKGROUP\\WIN-U1DFOUPBRP2$',
-          'WIN-U1DFOUPBRP2\\ADMIN',
           'FactoryTalk Service',
-          'NT AUTHORITY\\LOCAL SERVICE',
-          'NT AUTHORITY\\SYSTEM'
+          'NT AUTHORITY\LOCAL SERVICE',
+          'NT AUTHORITY\SYSTEM'
         )
+        -- exclude the computer account (DOMAIN\MachineName$)
+        AND UserID NOT LIKE ?
+        -- exclude the local admin account (MachineName\ADMIN)
+        AND UserID NOT LIKE ?
     )
     SELECT
       UTC_Time,
@@ -59,9 +69,15 @@ def get_audit_data(start_dt, end_dt, config):
     FROM AuditCTE
     ORDER BY UTC_Time;
     """
+    
+    # 4) Build the two patterns for the LIKE filters
+    pattern_computer = f"%\\{server_name}$"
+    pattern_admin    = f"{server_name}\\ADMIN"
+    # 5) Execute & return a pandas DataFrame
+    params = (start_dt, end_dt, pattern_computer, pattern_admin)
 
     # Query with UTC times
-    df = pd.read_sql_query(query, conn, params=[start_dt, end_dt])
+    df = pd.read_sql_query(query, conn, params=params)
 
     if df.empty:
         return df
@@ -102,8 +118,8 @@ def get_audit_data(start_dt, end_dt, config):
 #         AND UserID NOT IN (
 #           'NT AUTHORITY\\NETWORK SERVICE',
 #           'N/A',
-#           'WORKGROUP\\WIN-U1DFOUPBRP2$',
-#           'WIN-U1DFOUPBRP2\\ADMIN',
+#           'WORKGROUP\\WIN-U1DFOUPBRPI$',
+#           'WIN-U1DFOUPBRPI\\ADMIN',
 #           'FactoryTalk Service',
 #           'NT AUTHORITY\\LOCAL SERVICE',
 #           'NT AUTHORITY\\SYSTEM'
@@ -326,12 +342,33 @@ def show(databases):
         }
         pdf = generate_audit_pdf_report(df, params)
 
-        st.download_button(
-            label="📥 Print Report",
-            data=pdf,
-            file_name=f"Audit_Report_{datetime.now():%Y%m%d_%H%M}.pdf",
-            mime="application/pdf"
-        )
+        # st.download_button(
+        #     label="📥 Print Report",
+        #     data=pdf,
+        #     file_name=f"Audit_Report_{datetime.now():%Y%m%d_%H%M}.pdf",
+        #     mime="application/pdf"
+        # )
+
+        # Encode the PDF to base64 so it can be rendered in HTML
+        pdf_b64 = base64.b64encode(pdf).decode()
+
+        # Inject HTML + JS to display and auto-print the PDF
+        st.markdown(f"""
+            <style>
+                .pdf-container {{
+                    width: 100%;
+                    height: 80vh;
+                    border: none;
+                }}
+            </style>
+            <h4>📄 Previewing Report </h4>
+            <iframe class="pdf-container" 
+                    src="data:application/pdf;base64,{pdf_b64}" 
+                    type="application/pdf"
+                    onload="this.contentWindow.print();">
+            </iframe>
+        """, unsafe_allow_html=True)
+
         if df.empty:
             st.warning("No audit records found for that period.")
             return
@@ -378,5 +415,5 @@ def show(databases):
         """, unsafe_allow_html=True)
 
         # Display the styled HTML table
-        st.markdown(styled_html, unsafe_allow_html=True)
+        # st.markdown(styled_html, unsafe_allow_html=True)
 
